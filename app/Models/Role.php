@@ -20,4 +20,10 @@ class Role extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    // Relationship: Role has many AI tools
+    public function aiTools()
+    {
+    return $this->belongsToMany(AiTool::class, 'tool_role');
+    }
 }
