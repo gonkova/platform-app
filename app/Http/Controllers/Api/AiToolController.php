@@ -8,39 +8,54 @@ use Illuminate\Http\Request;
 
 class AiToolController extends Controller
 {
-    // Get all AI tools
+    /**
+     * Display a listing of the resource.
+     */
     public function index(Request $request)
     {
-        $query = AiTool::with(['categories', 'roles', 'creator'])
-            ->where('is_active', true);
+        $query = AiTool::with(['categories', 'roles', 'creator']);
 
-        // Filter by category
-        if ($request->has('category_id')) {
+        // Owner вижда всичко, останалите само approved
+        if (auth()->user()->role->name !== 'owner') {
+            $query->approved();
+        }
+
+        // Филтър по категория
+        if ($request->has('category')) {
             $query->whereHas('categories', function ($q) use ($request) {
-                $q->where('categories.id', $request->category_id);
+                $q->where('categories.id', $request->category);
             });
         }
 
-        // Filter by role
-        if ($request->has('role_id')) {
+        // Филтър по роля
+        if ($request->has('role')) {
             $query->whereHas('roles', function ($q) use ($request) {
-                $q->where('roles.id', $request->role_id);
+                $q->where('roles.id', $request->role);
             });
         }
 
-        // Filter by difficulty
+        // Филтър по difficulty
         if ($request->has('difficulty')) {
             $query->where('difficulty_level', $request->difficulty);
         }
 
-        // Filter free/paid
-        if ($request->has('is_free')) {
-            $query->where('is_free', $request->boolean('is_free'));
+        // Филтър по статус (само за owner)
+        if ($request->has('status') && auth()->user()->role->name === 'owner') {
+            $query->where('status', $request->status);
         }
 
-        $tools = $query->orderBy('name')->get();
+        // Search
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
 
-        return response()->json($tools);
+        $aiTools = $query->latest()->paginate(12);
+
+        return response()->json($aiTools);
     }
 
     // Get single tool
@@ -52,7 +67,9 @@ class AiToolController extends Controller
         return response()->json($tool);
     }
 
-    // Create new tool
+    /**
+     * Store a newly created resource in storage.
+     */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -62,37 +79,41 @@ class AiToolController extends Controller
             'documentation_url' => 'nullable|url',
             'video_url' => 'nullable|url',
             'difficulty_level' => 'required|in:beginner,intermediate,advanced',
-            'logo_url' => 'nullable|url',
-            'is_free' => 'required|boolean',
-            'price' => 'nullable|numeric|min:0',
-            'category_ids' => 'required|array|min:1',
-            'category_ids.*' => 'exists:categories,id',
-            'role_ids' => 'required|array|min:1',
-            'role_ids.*' => 'exists:roles,id',
+            'categories' => 'array',
+            'categories.*' => 'exists:categories,id',
+            'roles' => 'array',
+            'roles.*' => 'exists:roles,id',
         ]);
 
-        $tool = AiTool::create([
+        // Създаваме tool-а с pending статус
+        $aiTool = AiTool::create([
             'name' => $validated['name'],
             'description' => $validated['description'],
             'url' => $validated['url'],
             'documentation_url' => $validated['documentation_url'] ?? null,
             'video_url' => $validated['video_url'] ?? null,
             'difficulty_level' => $validated['difficulty_level'],
-            'logo_url' => $validated['logo_url'] ?? null,
-            'is_free' => $validated['is_free'],
-            'price' => $validated['price'] ?? null,
-            'created_by' => $request->user()->id,
+            'is_active' => true,
+            'created_by' => auth()->id(),
+            'status' => 'pending', // Автоматично pending
         ]);
 
-        // Attach categories and roles
-        $tool->categories()->attach($validated['category_ids']);
-        $tool->roles()->attach($validated['role_ids']);
+        // Attach categories
+        if (isset($validated['categories'])) {
+            $aiTool->categories()->attach($validated['categories']);
+        }
 
-        $tool->load(['categories', 'roles']);
+        // Attach roles
+        if (isset($validated['roles'])) {
+            $aiTool->roles()->attach($validated['roles']);
+        }
+
+        // Load relationships
+        $aiTool->load(['categories', 'roles', 'creator']);
 
         return response()->json([
-            'message' => 'AI инструментът е създаден успешно',
-            'tool' => $tool,
+            'message' => 'AI Tool created successfully and is pending approval',
+            'data' => $aiTool
         ], 201);
     }
 
@@ -112,22 +133,22 @@ class AiToolController extends Controller
             'is_free' => 'sometimes|boolean',
             'price' => 'nullable|numeric|min:0',
             'is_active' => 'sometimes|boolean',
-            'category_ids' => 'sometimes|array',
-            'category_ids.*' => 'exists:categories,id',
-            'role_ids' => 'sometimes|array',
-            'role_ids.*' => 'exists:roles,id',
+            'categories' => 'sometimes|array',
+            'categories.*' => 'exists:categories,id',
+            'roles' => 'sometimes|array',
+            'roles.*' => 'exists:roles,id',
         ]);
 
         // Update basic fields
-        $tool->update(array_diff_key($validated, ['category_ids' => '', 'role_ids' => '']));
+        $tool->update(array_diff_key($validated, ['categories' => '', 'roles' => '']));
 
         // Update relationships if provided
-        if (isset($validated['category_ids'])) {
-            $tool->categories()->sync($validated['category_ids']);
+        if (isset($validated['categories'])) {
+            $tool->categories()->sync($validated['categories']);
         }
 
-        if (isset($validated['role_ids'])) {
-            $tool->roles()->sync($validated['role_ids']);
+        if (isset($validated['roles'])) {
+            $tool->roles()->sync($validated['roles']);
         }
 
         $tool->load(['categories', 'roles']);
@@ -146,6 +167,99 @@ class AiToolController extends Controller
 
         return response()->json([
             'message' => 'AI инструментът е изтрит успешно',
+        ]);
+    }
+
+    /**
+     * Показва само pending tools (за admin)
+     */
+    public function pending()
+    {
+        $tools = AiTool::where('status', 'pending')
+            ->with(['categories', 'roles', 'creator'])
+            ->latest()
+            ->paginate(20);
+
+        return response()->json($tools);
+    }
+
+    /**
+     * Одобрява tool
+     */
+    public function approve($id)
+    {
+        $tool = AiTool::findOrFail($id);
+        $tool->update([
+            'status' => 'approved',
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
+            'rejection_reason' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Tool approved successfully',
+            'tool' => $tool
+        ]);
+    }
+
+    /**
+     * Отказва tool
+     */
+    public function reject(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $tool = AiTool::findOrFail($id);
+        $tool->update([
+            'status' => 'rejected',
+            'rejection_reason' => $validated['reason'],
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Tool rejected successfully',
+            'tool' => $tool
+        ]);
+    }
+
+    /**
+     * Bulk одобрение
+     */
+    public function bulkApprove(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:ai_tools,id'
+        ]);
+
+        AiTool::whereIn('id', $request->ids)
+            ->update(['status' => 'approved']);
+
+        return response()->json([
+            'message' => 'Tools approved successfully',
+            'count' => count($request->ids)
+        ]);
+    }
+
+    /**
+     * Bulk отказ
+     */
+    public function bulkReject(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:ai_tools,id'
+        ]);
+
+        AiTool::whereIn('id', $request->ids)
+            ->update(['status' => 'rejected']);
+
+        return response()->json([
+            'message' => 'Tools rejected successfully',
+            'count' => count($request->ids)
         ]);
     }
 }

@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
 class AiTool extends Model
 {
@@ -30,11 +29,13 @@ class AiTool extends Model
     ];
 
     protected $casts = [
-        'is_free' => 'boolean',
         'is_active' => 'boolean',
+        'is_free' => 'boolean',
         'price' => 'decimal:2',
         'approved_at' => 'datetime',
     ];
+
+    protected $appends = ['status_label', 'status_color'];
 
     // Auto-generate slug from name
     protected static function boot()
@@ -43,104 +44,98 @@ class AiTool extends Model
 
         static::creating(function ($tool) {
             if (empty($tool->slug)) {
-                $tool->slug = Str::slug($tool->name);
+                $tool->slug = \Illuminate\Support\Str::slug($tool->name);
             }
         });
     }
 
-    // Relationship: AiTool belongs to User (creator)
+    /**
+     * Връзка с потребителя който е създал tool-а
+     */
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // Relationship: AiTool belongs to User (approver)
+    /**
+     * Връзка с потребителя който е одобрил tool-а
+     */
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
 
-    // Relationship: AiTool belongs to many Categories
+    /**
+     * Връзка many-to-many с categories
+     */
     public function categories()
     {
         return $this->belongsToMany(Category::class, 'tool_category');
     }
 
-    // Relationship: AiTool belongs to many Roles
+    /**
+     * Връзка many-to-many с roles
+     */
     public function roles()
     {
         return $this->belongsToMany(Role::class, 'tool_role');
     }
 
-    // Helper methods for status checking
-    public function isPending()
+    /**
+     * Scope за филтриране по статус
+     */
+    public function scopeStatus($query, $status)
     {
-        return $this->status === 'pending';
+        return $query->where('status', $status);
     }
 
-    public function isApproved()
-    {
-        return $this->status === 'approved';
-    }
-
-    public function isRejected()
-    {
-        return $this->status === 'rejected';
-    }
-
-    // Helper method for difficulty level
-    public function getDifficultyLevelAttribute($value)
-    {
-        return [
-            'beginner' => 'Начинаещ',
-            'intermediate' => 'Средно ниво',
-            'advanced' => 'Напреднало ниво',
-        ][$value] ?? $value;
-    }
-
-    // Scope for approved tools
+    /**
+     * Scope за одобрени tools
+     */
     public function scopeApproved($query)
     {
         return $query->where('status', 'approved');
     }
 
-    // Scope for active tools
-    public function scopeActive($query)
+    /**
+     * Scope за pending tools
+     */
+    public function scopePending($query)
     {
-        return $query->where('is_active', true);
+        return $query->where('status', 'pending');
     }
 
-    // Scope for free tools
-    public function scopeFree($query)
+    /**
+     * Scope за rejected tools
+     */
+    public function scopeRejected($query)
     {
-        return $query->where('is_free', true);
+        return $query->where('status', 'rejected');
     }
 
-    // Scope for paid tools
-    public function scopePaid($query)
+    /**
+     * Accessor за status label
+     */
+    public function getStatusLabelAttribute()
     {
-        return $query->where('is_free', false);
+        return match($this->status) {
+            'pending' => 'Чака одобрение',
+            'approved' => 'Одобрен',
+            'rejected' => 'Отказан',
+            default => 'Неизвестен',
+        };
     }
 
-    // Scope for specific difficulty
-    public function scopeDifficulty($query, $level)
+    /**
+     * Accessor за status color (за UI)
+     */
+    public function getStatusColorAttribute()
     {
-        return $query->where('difficulty_level', $level);
-    }
-
-    // Scope for tools by category
-    public function scopeInCategory($query, $categoryId)
-    {
-        return $query->whereHas('categories', function ($q) use ($categoryId) {
-            $q->where('categories.id', $categoryId);
-        });
-    }
-
-    // Scope for tools by role
-    public function scopeForRole($query, $roleId)
-    {
-        return $query->whereHas('roles', function ($q) use ($roleId) {
-            $q->where('roles.id', $roleId);
-        });
+        return match($this->status) {
+            'pending' => 'yellow',
+            'approved' => 'green',
+            'rejected' => 'red',
+            default => 'gray',
+        };
     }
 }

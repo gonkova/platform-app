@@ -2,60 +2,34 @@
 
 namespace Database\Seeders;
 
-use App\Models\Category;
 use Illuminate\Database\Seeder;
+use App\Models\Category;
 
 class CategorySeeder extends Seeder
 {
+    /**
+     * Run the database seeds.
+     */
     public function run(): void
     {
         $categories = [
-            [
-                'name' => 'Text Generation',
-                'slug' => 'text-generation',
-                'description' => 'AI инструменти за генериране на текст и съдържание',
-                'icon' => '✍️',
-                'color' => '#3B82F6',
-            ],
-            [
-                'name' => 'Image Generation',
-                'slug' => 'image-generation',
-                'description' => 'AI инструменти за създаване и редактиране на изображения',
-                'icon' => '🎨',
-                'color' => '#8B5CF6',
-            ],
-            [
-                'name' => 'Code Assistant',
-                'slug' => 'code-assistant',
-                'description' => 'AI асистенти за програмиране и разработка',
-                'icon' => '💻',
-                'color' => '#10B981',
-            ],
-            [
-                'name' => 'Data Analysis',
-                'slug' => 'data-analysis',
-                'description' => 'Инструменти за анализ и визуализация на данни',
-                'icon' => '📊',
-                'color' => '#F59E0B',
-            ],
-            [
-                'name' => 'Video & Audio',
-                'slug' => 'video-audio',
-                'description' => 'AI за обработка на видео и аудио съдържание',
-                'icon' => '🎬',
-                'color' => '#EF4444',
-            ],
-            [
-                'name' => 'Productivity',
-                'slug' => 'productivity',
-                'description' => 'Инструменти за повишаване на продуктивността',
-                'icon' => '⚡',
-                'color' => '#6366F1',
-            ],
+            ['name' => 'AI Writing', 'slug' => 'ai-writing', 'description' => 'AI инструменти за писане и съдържание'],
+            ['name' => 'AI Design', 'slug' => 'ai-design', 'description' => 'AI инструменти за дизайн и визуализация'],
+            ['name' => 'AI Coding', 'slug' => 'ai-coding', 'description' => 'AI инструменти за програмиране'],
+            ['name' => 'AI Analytics', 'slug' => 'ai-analytics', 'description' => 'AI инструменти за анализ на данни'],
+            ['name' => 'AI Marketing', 'slug' => 'ai-marketing', 'description' => 'AI инструменти за маркетинг'],
+            ['name' => 'AI Productivity', 'slug' => 'ai-productivity', 'description' => 'AI инструменти за продуктивност'],
+            ['name' => 'AI Image Generation', 'slug' => 'ai-image-generation', 'description' => 'AI генериране на изображения'],
+            ['name' => 'AI Video', 'slug' => 'ai-video', 'description' => 'AI инструменти за видео'],
+            ['name' => 'AI Audio', 'slug' => 'ai-audio', 'description' => 'AI инструменти за аудио'],
+            ['name' => 'AI Chat', 'slug' => 'ai-chat', 'description' => 'AI чат асистенти'],
         ];
 
         foreach ($categories as $category) {
-            Category::create($category);
+            Category::firstOrCreate(
+                ['slug' => $category['slug']],
+                $category
+            );
         }
     }
 }

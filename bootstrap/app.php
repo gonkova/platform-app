@@ -12,13 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->api(prepend: [
-            \App\Http\Middleware\Cors::class,
-        ]);
+        // Премахнахме Cors::class защото Laravel има вграден CORS handler
         
-        // Регистрирай role middleware
+        // Регистрирай middleware aliases
         $middleware->alias([
+            'auth' => \App\Http\Middleware\Authenticate::class,
+            'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
             'role' => \App\Http\Middleware\CheckRole::class,
+            'owner' => \App\Http\Middleware\CheckOwner::class,
+            'resource.owner' => \App\Http\Middleware\CheckResourceOwner::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

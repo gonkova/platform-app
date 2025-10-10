@@ -1,46 +1,67 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\AiToolController;
 use Illuminate\Support\Facades\Route;
 
-// Public routes
+// ===== PUBLIC ROUTES (без auth) =====
 Route::post('/login', [AuthController::class, 'login']);
-Route::get('/roles', function() {
-    return response()->json(\App\Models\Role::all());
-});
 
-// Categories - public access
-Route::get('/categories', [CategoryController::class, 'index']);
-Route::get('/categories/{id}', [CategoryController::class, 'show']);
-
-// AI Tools - public listing
-Route::get('/ai-tools', [AiToolController::class, 'index']);
-Route::get('/ai-tools/{id}', [AiToolController::class, 'show']);
-
-// Protected routes - всички authenticated потребители
+// ===== AUTHENTICATED ROUTES =====
 Route::middleware('auth:sanctum')->group(function () {
-    // Auth
+    
+    // Auth endpoints - всички authenticated потребители
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
-    
-    // AI Tools management - всички могат да създават
-    Route::post('/ai-tools', [AiToolController::class, 'store']);
-    Route::put('/ai-tools/{id}', [AiToolController::class, 'update']);
-});
 
-// Owner only routes - само за owner роля
-Route::middleware(['auth:sanctum', 'role:owner'])->group(function () {
-    // Categories management - само owner
-    Route::post('/categories', [CategoryController::class, 'store']);
-    Route::put('/categories/{id}', [CategoryController::class, 'update']);
-    Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+    // Categories и Roles - всички authenticated могат да четат
+    Route::get('/categories', function () {
+        return response()->json(\App\Models\Category::all());
+    });
     
-    // Delete tools - само owner може да трие
-    Route::delete('/ai-tools/{id}', [AiToolController::class, 'destroy']);
+    Route::get('/roles', function () {
+        return response()->json(\App\Models\Role::all());
+    });
+
+    // AI Tools - READ операции (всички authenticated)
+    Route::get('/ai-tools', [AiToolController::class, 'index']);
+    Route::get('/ai-tools/{id}', [AiToolController::class, 'show']);
+
+    // AI Tools - WRITE операции (всички authenticated могат да създават)
+    Route::post('/ai-tools', [AiToolController::class, 'store']);
+
+    // AI Tools - UPDATE/DELETE (само owner на ресурса или Owner роля)
+    Route::middleware('resource.owner')->group(function () {
+        Route::put('/ai-tools/{id}', [AiToolController::class, 'update']);
+        Route::delete('/ai-tools/{id}', [AiToolController::class, 'destroy']);
+    });
+
+    // ===== OWNER ONLY ROUTES =====
+    Route::middleware('owner')->group(function () {
+        
+        // Admin панел за одобрение на tools
+        Route::get('/admin/tools/pending', [AiToolController::class, 'pending']);
+        Route::post('/admin/tools/{id}/approve', [AiToolController::class, 'approve']);
+        Route::post('/admin/tools/{id}/reject', [AiToolController::class, 'reject']);
+        
+        // Bulk операции
+        Route::post('/admin/tools/bulk-approve', [AiToolController::class, 'bulkApprove']);
+        Route::post('/admin/tools/bulk-reject', [AiToolController::class, 'bulkReject']);
+    });
+
+    // ===== ROLE-SPECIFIC ROUTES (примерни) =====
     
-    // Approve/Reject tools
-    Route::post('/ai-tools/{id}/approve', [AiToolController::class, 'approve']);
-    Route::post('/ai-tools/{id}/reject', [AiToolController::class, 'reject']);
+    // Frontend роля - достъп до frontend ресурси
+    Route::middleware('role:owner,frontend')->group(function () {
+        Route::get('/frontend/resources', function () {
+            return response()->json(['message' => 'Frontend resources']);
+        });
+    });
+
+    // Backend роля - достъп до backend ресурси
+    Route::middleware('role:owner,backend')->group(function () {
+        Route::get('/backend/resources', function () {
+            return response()->json(['message' => 'Backend resources']);
+        });
+    });
 });

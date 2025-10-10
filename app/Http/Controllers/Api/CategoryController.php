@@ -23,7 +23,8 @@ class CategoryController extends Controller
     public function show($id)
     {
         $category = Category::with(['aiTools' => function ($query) {
-            $query->where('is_active', true);
+            $query->where('is_active', true)
+                  ->where('status', 'approved');
         }])->findOrFail($id);
 
         return response()->json($category);
