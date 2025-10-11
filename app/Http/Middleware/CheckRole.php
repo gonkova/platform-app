@@ -10,23 +10,20 @@ class CheckRole
 {
     /**
      * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     * @param  string  ...$roles
      */
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        // Проверка дали потребителят е логнат
-        if (!$request->user()) {
+        $user = $request->user();
+
+        if (!$user) {
             return response()->json([
                 'message' => 'Unauthorized. Please login.'
             ], 401);
         }
 
-        // Проверка дали потребителят има някоя от разрешените роли
-        $userRole = $request->user()->role->name;
+        $userRole = $user->role->name ?? null;
 
-        if (!in_array($userRole, $roles)) {
+        if (!$userRole || !in_array($userRole, $roles)) {
             return response()->json([
                 'message' => 'Forbidden. You do not have permission to access this resource.',
                 'your_role' => $userRole,

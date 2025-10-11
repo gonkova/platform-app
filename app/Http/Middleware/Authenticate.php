@@ -12,7 +12,7 @@ class Authenticate extends Middleware
      */
     protected function redirectTo(Request $request): ?string
     {
-       
+        // За API requests връщаме null (ще върне 401 JSON response)
         return null;
     }
 }

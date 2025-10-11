@@ -5,60 +5,119 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AiTool;
 use Illuminate\Http\Request;
+use App\Services\ActivityLogger;
 
 class AiToolController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index(Request $request)
     {
         $query = AiTool::with(['categories', 'roles', 'creator']);
 
-        // Owner вижда всичко, останалите само approved
         if (auth()->user()->role->name !== 'owner') {
             $query->approved();
         }
 
-        // Филтър по категория
+        if ($request->has('categories') && !empty($request->categories)) {
+            $categories = is_array($request->categories)
+                ? $request->categories
+                : explode(',', $request->categories);
+
+            $query->whereHas('categories', function ($q) use ($categories) {
+                $q->whereIn('categories.id', $categories);
+            });
+        }
+
         if ($request->has('category')) {
             $query->whereHas('categories', function ($q) use ($request) {
                 $q->where('categories.id', $request->category);
             });
         }
 
-        // Филтър по роля
+        if ($request->has('roles') && !empty($request->roles)) {
+            $roles = is_array($request->roles)
+                ? $request->roles
+                : explode(',', $request->roles);
+
+            $query->whereHas('roles', function ($q) use ($roles) {
+                $q->whereIn('roles.id', $roles);
+            });
+        }
+
         if ($request->has('role')) {
             $query->whereHas('roles', function ($q) use ($request) {
                 $q->where('roles.id', $request->role);
             });
         }
 
-        // Филтър по difficulty
-        if ($request->has('difficulty')) {
-            $query->where('difficulty_level', $request->difficulty);
+        if ($request->has('difficulty') && !empty($request->difficulty)) {
+            $difficulties = is_array($request->difficulty)
+                ? $request->difficulty
+                : explode(',', $request->difficulty);
+
+            $query->whereIn('difficulty_level', $difficulties);
         }
 
-        // Филтър по статус (само за owner)
         if ($request->has('status') && auth()->user()->role->name === 'owner') {
             $query->where('status', $request->status);
         }
 
-        // Search
-        if ($request->has('search')) {
+        if ($request->has('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('url', 'like', "%{$search}%");
             });
         }
 
-        $aiTools = $query->latest()->paginate(12);
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $allowedSorts = ['created_at', 'name', 'difficulty_level', 'updated_at'];
 
-        return response()->json($aiTools);
+        if (in_array($sortBy, $allowedSorts)) {
+            $query->orderBy($sortBy, $sortOrder);
+        } else {
+            $query->latest();
+        }
+
+        $perPage = $request->get('per_page', 12);
+        $perPage = min(max($perPage, 6), 50);
+
+        $aiTools = $query->paginate($perPage);
+        $stats = $this->getFilterStats($request);
+
+        return response()->json([
+            'data' => $aiTools->items(),
+            'pagination' => [
+                'total' => $aiTools->total(),
+                'per_page' => $aiTools->perPage(),
+                'current_page' => $aiTools->currentPage(),
+                'last_page' => $aiTools->lastPage(),
+                'from' => $aiTools->firstItem(),
+                'to' => $aiTools->lastItem(),
+            ],
+            'stats' => $stats,
+        ]);
     }
 
-    // Get single tool
+    private function getFilterStats(Request $request)
+    {
+        $baseQuery = AiTool::query();
+
+        if (auth()->user()->role->name !== 'owner') {
+            $baseQuery->approved();
+        }
+
+        return [
+            'total_tools' => $baseQuery->count(),
+            'by_difficulty' => [
+                'beginner' => (clone $baseQuery)->where('difficulty_level', 'beginner')->count(),
+                'intermediate' => (clone $baseQuery)->where('difficulty_level', 'intermediate')->count(),
+                'advanced' => (clone $baseQuery)->where('difficulty_level', 'advanced')->count(),
+            ],
+        ];
+    }
+
     public function show($id)
     {
         $tool = AiTool::with(['categories', 'roles', 'creator'])
@@ -67,9 +126,6 @@ class AiToolController extends Controller
         return response()->json($tool);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -85,7 +141,6 @@ class AiToolController extends Controller
             'roles.*' => 'exists:roles,id',
         ]);
 
-        // Създаваме tool-а с pending статус
         $aiTool = AiTool::create([
             'name' => $validated['name'],
             'description' => $validated['description'],
@@ -95,21 +150,20 @@ class AiToolController extends Controller
             'difficulty_level' => $validated['difficulty_level'],
             'is_active' => true,
             'created_by' => auth()->id(),
-            'status' => 'pending', // Автоматично pending
+            'status' => 'pending',
         ]);
 
-        // Attach categories
         if (isset($validated['categories'])) {
             $aiTool->categories()->attach($validated['categories']);
         }
 
-        // Attach roles
         if (isset($validated['roles'])) {
             $aiTool->roles()->attach($validated['roles']);
         }
 
-        // Load relationships
         $aiTool->load(['categories', 'roles', 'creator']);
+
+        ActivityLogger::logCreated($aiTool, "Създаде AI Tool: {$aiTool->name}");
 
         return response()->json([
             'message' => 'AI Tool created successfully and is pending approval',
@@ -117,10 +171,13 @@ class AiToolController extends Controller
         ], 201);
     }
 
-    // Update tool
     public function update(Request $request, $id)
     {
         $tool = AiTool::findOrFail($id);
+        $oldValues = $tool->only([
+            'name', 'description', 'url', 'documentation_url',
+            'video_url', 'difficulty_level', 'is_active'
+        ]);
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
@@ -139,10 +196,8 @@ class AiToolController extends Controller
             'roles.*' => 'exists:roles,id',
         ]);
 
-        // Update basic fields
         $tool->update(array_diff_key($validated, ['categories' => '', 'roles' => '']));
 
-        // Update relationships if provided
         if (isset($validated['categories'])) {
             $tool->categories()->sync($validated['categories']);
         }
@@ -153,16 +208,21 @@ class AiToolController extends Controller
 
         $tool->load(['categories', 'roles']);
 
+        ActivityLogger::logUpdated($tool, $oldValues, "Обнови AI Tool: {$tool->name}");
+
         return response()->json([
             'message' => 'AI инструментът е обновен успешно',
             'tool' => $tool,
         ]);
     }
 
-    // Delete tool
     public function destroy($id)
     {
         $tool = AiTool::findOrFail($id);
+        $toolName = $tool->name;
+
+        ActivityLogger::logDeleted($tool, "Изтри AI Tool: {$toolName}");
+
         $tool->delete();
 
         return response()->json([
@@ -170,22 +230,6 @@ class AiToolController extends Controller
         ]);
     }
 
-    /**
-     * Показва само pending tools (за admin)
-     */
-    public function pending()
-    {
-        $tools = AiTool::where('status', 'pending')
-            ->with(['categories', 'roles', 'creator'])
-            ->latest()
-            ->paginate(20);
-
-        return response()->json($tools);
-    }
-
-    /**
-     * Одобрява tool
-     */
     public function approve($id)
     {
         $tool = AiTool::findOrFail($id);
@@ -196,15 +240,14 @@ class AiToolController extends Controller
             'rejection_reason' => null,
         ]);
 
+        ActivityLogger::logApproved($tool, "Одобри AI Tool: {$tool->name}");
+
         return response()->json([
             'message' => 'Tool approved successfully',
             'tool' => $tool
         ]);
     }
 
-    /**
-     * Отказва tool
-     */
     public function reject(Request $request, $id)
     {
         $validated = $request->validate([
@@ -219,15 +262,14 @@ class AiToolController extends Controller
             'approved_at' => now(),
         ]);
 
+        ActivityLogger::logRejected($tool, $validated['reason'], "Отказа AI Tool: {$tool->name}");
+
         return response()->json([
             'message' => 'Tool rejected successfully',
             'tool' => $tool
         ]);
     }
 
-    /**
-     * Bulk одобрение
-     */
     public function bulkApprove(Request $request)
     {
         $request->validate([
@@ -235,8 +277,14 @@ class AiToolController extends Controller
             'ids.*' => 'exists:ai_tools,id'
         ]);
 
+        $tools = AiTool::whereIn('id', $request->ids)->get();
+
         AiTool::whereIn('id', $request->ids)
             ->update(['status' => 'approved']);
+
+        foreach ($tools as $tool) {
+            ActivityLogger::logApproved($tool, "Bulk одобрение на AI Tool: {$tool->name}");
+        }
 
         return response()->json([
             'message' => 'Tools approved successfully',
@@ -244,9 +292,6 @@ class AiToolController extends Controller
         ]);
     }
 
-    /**
-     * Bulk отказ
-     */
     public function bulkReject(Request $request)
     {
         $request->validate([
@@ -254,12 +299,28 @@ class AiToolController extends Controller
             'ids.*' => 'exists:ai_tools,id'
         ]);
 
+        $tools = AiTool::whereIn('id', $request->ids)->get();
+
         AiTool::whereIn('id', $request->ids)
             ->update(['status' => 'rejected']);
+
+        foreach ($tools as $tool) {
+            ActivityLogger::logRejected($tool, 'Bulk rejection', "Bulk отказ на AI Tool: {$tool->name}");
+        }
 
         return response()->json([
             'message' => 'Tools rejected successfully',
             'count' => count($request->ids)
         ]);
+    }
+
+    public function pending()
+    {
+        $tools = AiTool::where('status', 'pending')
+            ->with(['categories', 'roles', 'creator'])
+            ->latest()
+            ->paginate(20);
+
+        return response()->json($tools);
     }
 }

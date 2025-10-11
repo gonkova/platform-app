@@ -13,16 +13,20 @@ class CheckOwner
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (!$request->user()) {
+        $user = $request->user();
+
+        if (!$user) {
             return response()->json([
                 'message' => 'Unauthorized. Please login.'
             ], 401);
         }
 
-        if ($request->user()->role->name !== 'owner') {
+        $roleName = $user->role->name ?? null;
+
+        if ($roleName !== 'owner') {
             return response()->json([
                 'message' => 'Forbidden. Only owners can perform this action.',
-                'your_role' => $request->user()->role->name
+                'your_role' => $roleName
             ], 403);
         }
 
