@@ -15,11 +15,11 @@ class AiToolSeeder extends Seeder
         // Вземи Owner потребителя като creator
         $owner = User::where('email', 'ivan@admin.local')->first();
         
-        // Вземи категориите
-        $textGen = Category::where('slug', 'text-generation')->first();
-        $imageGen = Category::where('slug', 'image-generation')->first();
-        $codeAssist = Category::where('slug', 'code-assistant')->first();
-        $productivity = Category::where('slug', 'productivity')->first();
+        // Вземи категориите (използвай правилните slugs от CategorySeeder)
+        $textGen = Category::where('slug', 'ai-writing')->first();
+        $imageGen = Category::where('slug', 'ai-image-generation')->first();
+        $codeAssist = Category::where('slug', 'ai-coding')->first();
+        $productivity = Category::where('slug', 'ai-productivity')->first();
         
         // Вземи ролите
         $ownerRole = Role::where('name', 'owner')->first();
