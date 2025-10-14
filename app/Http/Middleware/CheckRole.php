@@ -21,9 +21,17 @@ class CheckRole
             ], 401);
         }
 
-        $userRole = $user->role->name ?? null;
+        // Проверка дали потребителят има роля
+        if (!$user->role) {
+            return response()->json([
+                'message' => 'Forbidden. User has no assigned role.',
+                'required_roles' => $roles
+            ], 403);
+        }
 
-        if (!$userRole || !in_array($userRole, $roles)) {
+        $userRole = $user->role->name;
+
+        if (!in_array($userRole, $roles)) {
             return response()->json([
                 'message' => 'Forbidden. You do not have permission to access this resource.',
                 'your_role' => $userRole,

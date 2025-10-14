@@ -13,7 +13,8 @@ class AiToolController extends Controller
     {
         $query = AiTool::with(['categories', 'roles', 'creator']);
 
-        if (auth()->user()->role->name !== 'owner') {
+        // Проверка дали потребителят има роля и дали не е owner
+        if (!auth()->user()->role || auth()->user()->role->name !== 'owner') {
             $query->approved();
         }
 
@@ -57,7 +58,7 @@ class AiToolController extends Controller
             $query->whereIn('difficulty_level', $difficulties);
         }
 
-        if ($request->has('status') && auth()->user()->role->name === 'owner') {
+        if ($request->has('status') && auth()->user()->role && auth()->user()->role->name === 'owner') {
             $query->where('status', $request->status);
         }
 
@@ -104,7 +105,8 @@ class AiToolController extends Controller
     {
         $baseQuery = AiTool::query();
 
-        if (auth()->user()->role->name !== 'owner') {
+        // Проверка дали потребителят има роля и дали не е owner
+        if (!auth()->user()->role || auth()->user()->role->name !== 'owner') {
             $baseQuery->approved();
         }
 
